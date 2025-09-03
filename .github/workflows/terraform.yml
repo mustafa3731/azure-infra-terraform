@@ -1,0 +1,76 @@
+name: Terraform Azure VM (Apache)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  # Azure OIDC (use repo secrets)
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+  # SSH keys for Terraform remote-exec provisioner
+  TF_VAR_admin_ssh_public_key: ${{ secrets.TF_VAR_admin_ssh_public_key }}
+  TF_VAR_admin_private_key: ${{ secrets.TF_VAR_admin_private_key }}
+
+  # Remote backend for Terraform state (your values)
+  TFSTATE_RG: "tfstate-rg"
+  TFSTATE_STORAGE: "mustafastatestore01"
+  TFSTATE_CONTAINER: "tfstate"
+  TFSTATE_KEY: "vm/terraform.tfstate"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform Init (AzureRM backend with AAD)
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${TFSTATE_RG}" \
+            -backend-config="storage_account_name=${TFSTATE_STORAGE}" \
+            -backend-config="container_name=${TFSTATE_CONTAINER}" \
+            -backend-config="key=${TFSTATE_KEY}" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Terraform Fmt (check)
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Show Outputs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform output
