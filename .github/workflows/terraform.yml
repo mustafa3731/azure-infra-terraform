@@ -11,17 +11,17 @@ permissions:
   contents: read
 
 env:
-  # Azure OIDC (use repo secrets)
+  # Azure auth for Terraform (used by provider + backend)
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-  # SSH keys for Terraform remote-exec provisioner
+  # SSH keys for provisioner
   TF_VAR_admin_ssh_public_key: ${{ secrets.TF_VAR_admin_ssh_public_key }}
   TF_VAR_admin_private_key: ${{ secrets.TF_VAR_admin_private_key }}
 
-  # Remote backend for Terraform state (your values)
+  # Remote backend
   TFSTATE_RG: "tfstate-rg"
   TFSTATE_STORAGE: "mustafastatestore01"
   TFSTATE_CONTAINER: "tfstate"
@@ -38,12 +38,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Login via OIDC but don't set a subscription (Terraform uses ARM_* envs)
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           allow-no-subscriptions: true
 
       - name: Setup Terraform
